@@ -1,0 +1,84 @@
+# Локальный форк official:noctalia/timer.
+#
+# Отличия от апстрима:
+#   * панель переработана — пресеты + отдельные поля Часы/Минуты/Секунды
+#     со степперами вместо одного «сдвигающегося» поля ввода
+#   * русская локализация (translations/ru.json)
+#
+# Живёт в path-источнике `vlad-dev` (location = /home/vlad/dev/noctalia-plugins),
+# поэтому обновления официального источника его не трогают. Официальный
+# noctalia/timer при этом выключен в plugins.enabled.
+
+id = "vlad-dev/timer"
+name = "Timer (vlad)"
+version = "1.5.0"
+plugin_api = 20
+author = "noctalia (fork vlad)"
+license = "MIT"
+dependencies = []
+tags = ["countdown", "utility"]
+icon = "clock"
+description = "A countdown timer with bar widget, panel, and desktop widget. Fork with a reworked duration panel."
+
+# Alarm sound at countdown 0, beeps until dismissed, overriding alarm_duration
+[[setting]]
+key = "alarm"
+type = "bool"
+label_key = "settings.alarm.label"
+description_key = "settings.alarm.description"
+default = false
+
+# Alarm length in seconds, 0 silences it. Hidden while alarm is on
+[[setting]]
+key = "alarm_duration"
+type = "int"
+label_key = "settings.alarm_duration.label"
+description_key = "settings.alarm_duration.description"
+default = 10
+min = 0
+max = 60
+visible_when = { key = "alarm", values = ["false"] }
+
+[[widget]]
+id = "bar"
+entry = "bar.luau"
+
+  [[widget.setting]]
+  key = "show_idle_on_horizontal"
+  type = "bool"
+  label_key = "settings.show_idle.label"
+  description_key = "settings.show_idle.description"
+  default = true
+
+[[panel]]
+id = "panel"
+entry = "panel.luau"
+width = 320
+height = 220
+placement = "attached"
+position = "auto"
+open_near_click = true
+# Панель сама читает нажатия: «вписывание» времени — эмуляция набора, поля
+# ввода (и курсора) нет. Плюс Return — старт, BackSpace — стереть цифру.
+capture_keys = ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "Return", "BackSpace"]
+
+[[service]]
+id = "timer"
+entry = "service.luau"
+
+[[desktop_widget]]
+id = "desktop"
+entry = "desktop.luau"
+
+  [[desktop_widget.setting]]
+  key = "color"
+  type = "color"
+  label_key = "settings.color.label"
+  description_key = "settings.color.description"
+  default = "primary"
+
+  [[desktop_widget.setting]]
+  key = "show_progress"
+  type = "bool"
+  label_key = "settings.show_progress.label"
+  default = true

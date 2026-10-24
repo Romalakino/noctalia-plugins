@@ -1,0 +1,8 @@
+{
+  "panel": {
+    "title": "Equalizer"
+  },
+  "error": {
+    "apply": "Could not apply the profile"
+  }
+}

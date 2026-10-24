@@ -1,0 +1,172 @@
+#!/usr/bin/env bash
+# eqctl — движок системного эквалайзера для плагина vlad-dev/equalizer.
+#
+# Эквалайзер считает EasyEffects (он умеет следовать за устройством вывода и
+# менять пресеты без разрыва звука), а панель в Noctalia дёргает этот скрипт.
+# Единственный источник правды по пресетам — presets.json рядом со скриптом:
+# отсюда же генерируются файлы пресетов EasyEffects.
+#
+#   eqctl status                 → JSON {running, preset, bypass, name}
+#   eqctl apply <id>             → включить пресет (и снять bypass)
+#   eqctl bypass on|off|toggle   → обход эквалайзера целиком
+#   eqctl sync                   → только перегенерировать пресеты
+set -uo pipefail
+
+DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
+PRESETS="$DIR/presets.json"
+STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/equalizer"
+STATE="$STATE_DIR/state.json"
+EE_OUT="${XDG_DATA_HOME:-$HOME/.local/share}/easyeffects/output"
+EE_PREFIX="vlad-eq-"
+
+mkdir -p "$STATE_DIR"
+
+ee_running() { pgrep -x easyeffects >/dev/null 2>&1; }
+
+ensure_ee() {
+  if ! ee_running; then
+    # Держим EasyEffects как службу без окна: он сам восстанавливает пресет.
+    setsid easyeffects --hide-window >/dev/null 2>&1 &
+    for _ in $(seq 1 40); do
+      ee_running && sleep 0.3 && return 0
+      sleep 0.1
+    done
+    return 1
+  fi
+}
+
+gen_presets() {
+  python3 - "$PRESETS" "$EE_OUT" "$EE_PREFIX" <<'PY'
+import json, os, sys
+
+src, outdir, prefix = sys.argv[1], sys.argv[2], sys.argv[3]
+data = json.load(open(src, encoding="utf-8"))
+bands = data["bands"]
+os.makedirs(outdir, exist_ok=True)
+
+# Порядок обработки: EQ → гармоники → де-эссер → компрессор → стерео → лимитер.
+FX_ORDER = ["bass_enhancer", "exciter", "deesser", "compressor", "stereo_tools", "limiter"]
+
+for preset in data["presets"]:
+    bandmap = {}
+    for i, freq in enumerate(bands):
+        bandmap[f"band{i}"] = {
+            "frequency": float(freq),
+            "gain": float(preset["gains"][i]),
+            "q": 1.4,
+            "type": "Bell",
+            "mute": False,
+            "solo": False,
+        }
+    doc = {
+        "output": {
+            "blocklist": [],
+            "equalizer": {
+                "input-gain": float(preset.get("inputGain", 0)),
+                "output-gain": 0.0,
+                "num-bands": len(bands),
+                "split-channels": False,
+                "mode": "IIR",
+                "left": bandmap,
+                "right": json.loads(json.dumps(bandmap)),
+            },
+            "plugins_order": ["equalizer"],
+        }
+    }
+    effects = preset.get("effects") or {}
+    for name in FX_ORDER:
+        params = effects.get(name)
+        if not params:
+            continue
+        block = {"bypass": False, "input-gain": 0.0, "output-gain": 0.0}
+        block.update(params)
+        doc["output"][name] = block
+        doc["output"]["plugins_order"].append(name)
+    path = os.path.join(outdir, f"{prefix}{preset['id']}.json")
+    with open(path, "w", encoding="utf-8") as fh:
+        json.dump(doc, fh, ensure_ascii=False, indent=2)
+PY
+}
+
+save_state() {
+  python3 - "$STATE" "$1" "$2" <<'PY'
+import json, sys
+path, preset, bypass = sys.argv[1], sys.argv[2], sys.argv[3] == "true"
+json.dump({"preset": preset, "bypass": bypass}, open(path, "w"))
+PY
+}
+
+read_state() {
+  python3 - "$STATE" "$1" <<'PY'
+import json, os, sys
+path, field = sys.argv[1], sys.argv[2]
+try:
+    data = json.load(open(path))
+except Exception:
+    data = {}
+print(data.get(field, ""))
+PY
+}
+
+ee_bypass() { # печатает 1 (обход включён) или 2 (эквалайзер работает)
+  easyeffects -b 3 2>/dev/null | tr -d '[:space:]'
+}
+
+cmd="${1:-status}"
+
+case "$cmd" in
+  sync)
+    gen_presets
+    ;;
+
+  apply)
+    id="${2:-}"
+    [ -n "$id" ] || { echo "usage: eqctl apply <id>" >&2; exit 2; }
+    ensure_ee || { echo "easyeffects не запустился" >&2; exit 1; }
+    gen_presets
+    easyeffects -l "${EE_PREFIX}${id}" >/dev/null 2>&1
+    easyeffects -b 2 >/dev/null 2>&1
+    save_state "$id" false
+    ;;
+
+  bypass)
+    mode="${2:-toggle}"
+    ensure_ee || { echo "easyeffects не запустился" >&2; exit 1; }
+    case "$mode" in
+      on)     easyeffects -b 1 >/dev/null 2>&1; save_state "$(read_state preset)" true ;;
+      off)    easyeffects -b 2 >/dev/null 2>&1; save_state "$(read_state preset)" false ;;
+      toggle)
+        if [ "$(ee_bypass)" = "1" ]; then
+          easyeffects -b 2 >/dev/null 2>&1; save_state "$(read_state preset)" false
+        else
+          easyeffects -b 1 >/dev/null 2>&1; save_state "$(read_state preset)" true
+        fi
+        ;;
+      *) echo "usage: eqctl bypass on|off|toggle" >&2; exit 2 ;;
+    esac
+    ;;
+
+  status)
+    running=false; ee_running && running=true
+    bypass=false
+    [ "$running" = true ] && [ "$(ee_bypass)" = "1" ] && bypass=true
+    python3 - "$STATE" "$running" "$bypass" <<'PY'
+import json, sys
+path, running, bypass = sys.argv[1], sys.argv[2] == "true", sys.argv[3] == "true"
+try:
+    data = json.load(open(path))
+except Exception:
+    data = {}
+print(json.dumps({
+    "running": running,
+    "bypass": bypass,
+    "preset": data.get("preset", "flat"),
+}))
+PY
+    ;;
+
+  *)
+    echo "usage: eqctl status|apply <id>|bypass on|off|toggle|sync" >&2
+    exit 2
+    ;;
+esac

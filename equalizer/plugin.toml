@@ -1,0 +1,35 @@
+# Эквалайзер для Noctalia — простые профили поверх EasyEffects.
+#
+# Движок (EasyEffects) держит фильтр в тракте вывода и сам переезжает между
+# устройствами (BT/HDMI), а UI — плитка в Control Center и панель с профилями.
+# Пресеты описаны один раз в presets.json: из него eqctl генерирует пресеты
+# EasyEffects, а панель рисует кривую АЧХ.
+
+id          = "vlad-dev/equalizer"
+name        = "Equalizer (vlad)"
+version     = "1.0.0"
+plugin_api  = 32
+author      = "vlad"
+license     = "MIT"
+icon        = "adjustments-horizontal"
+description = "Системный эквалайзер с простыми профилями (бас, вокал, мягче верх) на EasyEffects."
+tags        = ["shortcut", "panel", "audio"]
+dependencies = ["easyeffects", "lsp-plugins", "python3"]
+
+# Плитка на главной Control Center (вход в панель)
+[[shortcut]]
+id    = "eq"
+entry = "shortcut.luau"
+
+# Живое имя профиля в баре
+[[widget]]
+id    = "eq_widget"
+entry = "widget.luau"
+
+[[panel]]
+id        = "panel"
+entry     = "panel.luau"
+width     = 372
+height    = 520
+placement = "attached"
+position  = "auto"
