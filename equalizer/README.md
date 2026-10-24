@@ -30,6 +30,10 @@ sudo pacman -S easyeffects lsp-plugins python3
 ## Установка
 
 ```bash
+# весь сборник плагинов
+git clone https://github.com/Romalakino/noctalia-plugins ~/dev/noctalia-plugins
+
+# или только эквалайзер
 git clone https://github.com/Romalakino/equalizer ~/dev/noctalia-plugins/equalizer
 ```
 
