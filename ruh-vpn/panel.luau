@@ -184,13 +184,24 @@ local function serverRows(servers, status, running, health, pings)
   local list = servers
   if sortByPing then
     list = {}
-    for i, s in ipairs(servers) do list[i] = s end
+    -- Original position is the tie-break, so servers that have not been
+    -- probed yet stay in the stored order instead of jumping around (and a
+    -- running sweep fills the top of the list as results arrive).
+    local pos = {}
+    for i, s in ipairs(servers) do
+      list[i] = s
+      pos[s.id] = i
+    end
+    local function rank(s)
+      local ms = tonumber(byId[s.id])
+      if ms == nil then return nil end
+      return (ms >= 0) and ms or math.huge
+    end
     table.sort(list, function(a, b)
-      local ma, mb = tonumber(byId[a.id]), tonumber(byId[b.id])
-      local na = (ma and ma >= 0) and ma or math.huge
-      local nb = (mb and mb >= 0) and mb or math.huge
-      if na ~= nb then return na < nb end
-      return tostring(a.name or "") < tostring(b.name or "")
+      local ra, rb = rank(a), rank(b)
+      if ra and rb and ra ~= rb then return ra < rb end
+      if (ra ~= nil) ~= (rb ~= nil) then return ra ~= nil end
+      return (pos[a.id] or 0) < (pos[b.id] or 0)
     end)
   end
 
@@ -711,11 +722,19 @@ function onOpenSubs() navigate("subs") end
 function onBack() navigate("main") end
 
 -- ── mass ping / fastest ─────────────────────────────────────────
+-- Both actions are latency-driven, so the list switches to fastest-first on
+-- its own; the arrow-down-up button still toggles back to the stored order.
 function onFastest()
   local s = noctalia.state.get("status") or {}
+  sortByPing = true
   send("ConnectFastest", { s.mode or "rules", s.proxyMode or "system" })
+  render()
 end
-function onPingAll() send("PingAll", {}) end
+function onPingAll()
+  sortByPing = true
+  send("PingAll", {})
+  render()
+end
 function onSortPing() sortByPing = not sortByPing; render() end
 
 function onImportClip()
