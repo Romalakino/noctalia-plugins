@@ -35,13 +35,19 @@ RULES_DB = CONFIG_DIR / f"{PREFIX}-rules.db"
 DEFAULT_LOG = {"level": "info", "timestamp": True}
 
 PROXY_DNS_ADDR = "9.9.9.9"
-DIRECT_DNS_ADDR = "9.9.9.9"
+# Прямой резолвер — Yandex: Quad9 (9.9.9.9) из РФ отваливается (то проходит, то
+# таймаут), а direct-dns обслуживает обычные «direct»-правила и unmatched в rules
+# режиме, где Quad9 не нужен. Для Roblox Quad9 остаётся обязательным — см.
+# ROBLOX_DNS_ADDR ниже.
+DIRECT_DNS_ADDR = "77.88.8.8"
 TUN_DNS_SERVER_NAME = "dns.google"
-# Why Quad9 for both: sing-box resolves the destination of an outbound connection
-# through `route.default_domain_resolver`, which *ignores* dns.rules.  Google
-# (8.8.8.8), AliDNS (223.5.5.5) and Cloudflare (1.1.1.1) all answer
-# `tr.rbxcdn.com` with a bare CNAME and no A record → "lookup tr.rbxcdn.com:
-# empty result" → no Roblox icons.  Quad9 returns the real CloudFront/Akamai IPs.
+# Why Quad9 for proxy/roblox: sing-box resolves the destination of an outbound
+# connection through `route.default_domain_resolver`, which *ignores* dns.rules.
+# Google (8.8.8.8), AliDNS (223.5.5.5), Cloudflare (1.1.1.1), Yandex (77.88.8.8),
+# OpenDNS and AdGuard all answer `tr.rbxcdn.com` with a bare CNAME and no A record
+# → "lookup tr.rbxcdn.com: empty result" → no Roblox icons.  Only Quad9 (and
+# Control D) return the real CloudFront/Akamai IPs.  Through the tunnel Quad9 is
+# reliable, which is why proxy-dns keeps it.
 
 # ---- Roblox bypass -----------------------------------------------------------
 # Roblox is inside the Re-filter "ru" list (roblox.com / rbxcdn.com), so as soon
